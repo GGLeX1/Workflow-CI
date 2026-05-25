@@ -88,6 +88,7 @@ def main():
         n_jobs=-1,
     )
     model.fit(X_train, y_train)
+    mlflow.sklearn.log_model(model, artifact_path="model")
     y_pred = model.predict(X_test)
 
     mse = mean_squared_error(y_test, y_pred)
