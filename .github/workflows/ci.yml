@@ -64,30 +64,27 @@ jobs:
           echo "RUN_ID=$RUN_ID" >> $GITHUB_OUTPUT
           echo "Captured RUN_ID: $RUN_ID"
 
+      - name: Copy model to build context
+        working-directory: ./MLProject
+        run: |
+          cp -r mlruns/0/${{ steps.get_run_id.outputs.RUN_ID }}/artifacts/model ./mlflow_model
+          ls -la mlflow_model/
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build MLflow Docker Image
-        working-directory: ./MLProject
-        run: |
-          mlflow models build-docker \
-            --model-uri "runs:/${{ steps.get_run_id.outputs.RUN_ID }}/model" \
-            --name "${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model"
-            --env-manager virtualenv
-
-      - name: Tag image
-        run: |
-          docker tag \
-            ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest \
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./MLProject
+          file: ./MLProject/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:${{ github.sha }}
-
-      - name: Push Docker Image to Docker Hub
-        run: |
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:${{ github.sha }}
 
       - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
@@ -109,5 +106,5 @@ jobs:
           echo "**MLflow Run ID**: ${{ steps.get_run_id.outputs.RUN_ID }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🐳 Docker Image" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: \`${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Pull command**: \`docker pull ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Pull: \`docker pull ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest\`" >> $GITHUB_STEP_SUMMARY
