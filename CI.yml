@@ -1,0 +1,78 @@
+name: MLflow CI - Re-train Model
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "MLProject/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  train-model:
+    name: Train MLflow Model
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11.5
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.5"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('MLProject/conda.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            mlflow==2.19.0 \
+            cloudpickle==2.2.1 \
+            lz4==4.3.2 \
+            numpy==1.26.4 \
+            pandas==2.2.3 \
+            psutil==5.9.0 \
+            scikit-learn==1.5.2 \
+            scipy==1.14.1 \
+            matplotlib
+
+      - name: Verify MLflow installation
+        run: |
+          mlflow --version
+          python -c "import sklearn, pandas, numpy, matplotlib; print('All dependencies OK')"
+
+      - name: Run MLflow Project
+        working-directory: ./MLProject
+        run: |
+          mlflow run . --env-manager=local
+
+      - name: Upload MLflow artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlflow-artifacts-${{ github.sha }}
+          path: |
+            MLProject/mlruns/
+            MLProject/*.png
+          retention-days: 30
+
+      - name: Training summary
+        if: always()
+        run: |
+          echo "## MLflow Training Run Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the **Artifacts** section above for downloadable MLflow run data." >> $GITHUB_STEP_SUMMARY
