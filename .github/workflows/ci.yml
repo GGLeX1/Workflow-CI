@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  train-model:
-    name: Train MLflow Model
+  train-and-publish:
+    name: Train MLflow Model and Publish Docker Image
     runs-on: ubuntu-latest
 
     steps:
@@ -56,6 +56,38 @@ jobs:
         run: |
           mlflow run . --env-manager=local
 
+      - name: Get MLflow Run ID
+        id: get_run_id
+        working-directory: ./MLProject
+        run: |
+          RUN_ID=$(ls -t mlruns/0/ | grep -v "meta.yaml\|datasets" | head -n 1)
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "Captured RUN_ID: $RUN_ID"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build MLflow Docker Image
+        working-directory: ./MLProject
+        run: |
+          mlflow models build-docker \
+            --model-uri "runs:/${{ steps.get_run_id.outputs.RUN_ID }}/model" \
+            --name "${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model"
+
+      - name: Tag image
+        run: |
+          docker tag \
+            ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:${{ github.sha }}
+
+      - name: Push Docker Image to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:${{ github.sha }}
+
       - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -69,10 +101,12 @@ jobs:
       - name: Training summary
         if: always()
         run: |
-          echo "## MLflow Training Run Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎯 MLflow Training & Docker Publish Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**MLflow Run ID**: ${{ steps.get_run_id.outputs.RUN_ID }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the **Artifacts** section above for downloadable MLflow run data." >> $GITHUB_STEP_SUMMARY
+          echo "### 🐳 Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pull command**: \`docker pull ${{ secrets.DOCKERHUB_USERNAME }}/msft-volatility-model:latest\`" >> $GITHUB_STEP_SUMMARY
